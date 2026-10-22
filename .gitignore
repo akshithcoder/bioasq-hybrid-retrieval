@@ -1,0 +1,30 @@
+.DS_Store
+.idea/
+.vscode/
+.venv/
+.venv-*/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# BioASQ and PubMed source data are regenerated locally and retain their own terms.
+data/raw/**
+!data/raw/.gitkeep
+data/processed/**
+!data/processed/.gitkeep
+
+# Intermediate neural artifacts can be hundreds of megabytes.
+*.npy
+*.npz
+*.safetensors
+*.ckpt
+*.pt
+!weights/medcpt-cross-encoder-lora.pt
+
+# Local experiment logs.
+logs/
+runs/

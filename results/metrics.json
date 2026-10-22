@@ -1,0 +1,107 @@
+{
+  "provenance": {
+    "description": "Aggregate values transcribed from the saved experiment summaries in the original research workspace.",
+    "recorded_for_repository": "2026-10-22",
+    "historical_results_modified": false,
+    "bioasq_dataset_revision": "451e95d26c5baadcb825dde145afb1f88c2d21b8",
+    "original_training14b_sha256": "e90d13c88b9a3eaafb6f7f414fcc1ed370a241b7728f8ad5c74b18c553369ef0",
+    "pinned_download_matches_original_by_question_id": true,
+    "source_files": [
+      "tfidf_recall20.json",
+      "tfidf_length_recall20.json",
+      "bm25_recall20.json",
+      "bm25_test.json",
+      "bm25_miss_analysis.json",
+      "medcpt_rerank_recall20.json",
+      "medcpt_bi_recall.json",
+      "lora_recall20.json",
+      "lora_bi_recall20.json",
+      "union_lora_recall20.json"
+    ]
+  },
+  "corpus": {
+    "bioasq_questions": 5729,
+    "unique_pubmed_records_requested": 58048,
+    "searchable_title_abstract_records": 58012,
+    "missing_abstracts": 79,
+    "empty_titles": 36
+  },
+  "temporal_split": {
+    "train": {"editions": "1-11", "questions": 5049},
+    "validation": {"editions": "12", "questions": 340},
+    "test": {"editions": "13", "questions": 340}
+  },
+  "metric": {
+    "name": "mean Recall@20",
+    "definition": "For each question, divide annotated relevant PMIDs in the first 20 results by annotated relevant PMIDs available in the corpus, then average across questions."
+  },
+  "systems": [
+    {
+      "name": "TF-IDF cosine",
+      "validation_recall_at_20": 0.5549069567789495,
+      "test_recall_at_20": 0.5550812889014819
+    },
+    {
+      "name": "BM25",
+      "validation_recall_at_20": 0.692806974885976,
+      "test_recall_at_20": 0.6434538265344673
+    },
+    {
+      "name": "MedCPT bi-encoder",
+      "validation_recall_at_20": 0.6663962564032694,
+      "test_recall_at_20": 0.6131763503658765
+    },
+    {
+      "name": "BM25 + frozen MedCPT reranker",
+      "validation_recall_at_20": 0.7305942596107295,
+      "test_recall_at_20": 0.687736350468453
+    },
+    {
+      "name": "MedCPT candidates + matching LoRA reranker",
+      "validation_recall_at_20": 0.7511184118735527,
+      "test_recall_at_20": 0.6998405698357077
+    },
+    {
+      "name": "BM25 + LoRA MedCPT reranker",
+      "validation_recall_at_20": 0.7523244219641239,
+      "test_recall_at_20": 0.7105498907524522
+    },
+    {
+      "name": "BM25/MedCPT union + LoRA reranker",
+      "validation_recall_at_20": 0.7654934976774986,
+      "test_recall_at_20": 0.7190013065914587,
+      "validation_full_coverage_at_20": 0.4294117647058823,
+      "test_full_coverage_at_20": 0.4,
+      "validation_mean_candidate_count": 332.1470588235294,
+      "test_mean_candidate_count": 333.8911764705882
+    }
+  ],
+  "bm25": {
+    "k1": 0.9,
+    "b": 0.4,
+    "selected_on": "edition-12 validation",
+    "test_recall_at_10": 0.499434459913674,
+    "test_precision_at_10": 0.6532352941176466,
+    "test_full_coverage_at_20": 0.29705882352941176
+  },
+  "lora": {
+    "base_model": "ncbi/MedCPT-Cross-Encoder",
+    "training_questions": 5029,
+    "training_pairs": 25521,
+    "rank": 8,
+    "alpha": 16,
+    "dropout": 0.1,
+    "learning_rate": 0.0001,
+    "passes": 1,
+    "candidate_depth": 200,
+    "adapter_sha256": "6ea8ab927507ccd6db4f9f57ee104789f00b65b0c1c2530b3fb40c93622d9bc5"
+  },
+  "bm25_error_analysis": {
+    "test_questions": 340,
+    "gold_articles_in_top_20": 3735,
+    "gold_articles_with_query_overlap_below_20": 5064,
+    "gold_articles_with_no_query_word": 28,
+    "questions_with_zero_recall_at_20": 1,
+    "questions_with_full_recall_at_20": 101
+  }
+}
