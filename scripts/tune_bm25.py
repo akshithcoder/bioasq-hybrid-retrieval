@@ -1,8 +1,4 @@
-"""Choose BM25's k1 and b on the validation questions only.
-
-The training questions are saved and then left unused. BM25 has no weights
-to learn from them. Edition 13 is saved and not scored.
-"""
+"""Tune BM25 k1 and b on edition-12 validation questions."""
 
 from __future__ import annotations
 

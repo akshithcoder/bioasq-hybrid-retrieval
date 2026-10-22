@@ -1,10 +1,4 @@
-"""Recall@20 with L2-normalized TF-IDF cosine similarity.
-
-No knobs are chosen here. The same formula is scored on train, validation,
-and test. A term weight is (term count) times (idf). Each article vector and
-each question vector is divided by its length, and the score is their dot
-product, which is the cosine.
-"""
+"""Evaluate the fixed TF-IDF cosine baseline at Recall@20."""
 
 from __future__ import annotations
 
@@ -47,7 +41,6 @@ def build_normalized_weights(posting_docs, posting_tfs, lengths, n_docs):
     squared = np.zeros(n_docs, dtype=np.float64)
     raw_weights = {}
     for token, rows in posting_docs.items():
-        # tf = count / number of words in the article
         weights = (posting_tfs[token] / lengths[rows]) * idf[token]
         raw_weights[token] = weights
         np.add.at(squared, rows, weights * weights)

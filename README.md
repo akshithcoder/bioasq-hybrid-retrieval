@@ -39,6 +39,56 @@ found among the first 20 results. The reported value is the mean across question
 The 71.90% result is therefore a retrieval recall—not answer accuracy, classification
 accuracy, or precision.
 
+### Recall@20 capacity and candidate oracle
+
+Some questions have more than 20 annotated articles, so no top-20 ranking can retrieve
+all of them. For a question with `g` annotated articles, the maximum possible
+Recall@20 is `min(20, g) / g`. Averaging this value over questions gives the top-20
+capacity below. The candidate oracle applies the same calculation after restricting
+the gold articles to those present in the hybrid BM25/MedCPT candidate union; it asks
+what a perfect reranker could achieve with the candidates the system actually found.
+
+| Split | Questions with >20 gold | Full recall possible | Top-20 capacity | Hybrid candidate oracle | BM25 | Hybrid |
+|---|---:|---:|---:|---:|---:|---:|
+| Validation | 146 (42.94%) | 194 (57.06%) | 83.99% | 83.43% | 69.28% | 76.55% |
+| Test | 161 (47.35%) | 179 (52.65%) | 77.20% | 76.90% | 64.35% | 71.90% |
+
+The validation gold counts have median 16, mean 19.73, and maximum 86; the test
+counts have median 18, mean 25.96, and maximum 125.
+
+![Recall@20 ceilings](docs/recall-ceilings.png)
+
+On the test split, the hybrid system's 71.90% raw Recall@20 is 93.13% of the
+77.20% top-20 capacity. It is 93.49% of its 76.90% candidate-restricted oracle.
+These ratios describe how much of each ceiling was achieved; they are not alternative
+recall scores. Of the 5.30-point gap to the top-20 capacity, 0.30 points come from
+relevant articles missing from the candidate union, while 5.00 points separate the
+observed result from a perfect reranking of the existing candidates. The corresponding
+validation gaps are 0.57 and 6.88 points. Candidate exclusion therefore accounts for
+5.64% of the test gap and 7.60% of the validation gap; the rest is attributable to
+ranking within the available candidates.
+
+Across validation and test respectively, BM25 achieved 82.48% and 83.35% of the
+top-20 capacity; the hybrid achieved 91.14% and 93.13%. Against its own
+candidate-restricted oracle, the hybrid achieved 91.76% and 93.49%.
+
+Full coverage means that all annotated articles for a question were retrieved in the
+top 20. It is impossible for the 146 validation and 161 test questions with more than
+20 annotated articles.
+
+| Split | System | Full coverage across all questions | Full coverage where possible |
+|---|---|---:|---:|
+| Validation | BM25 | 32.06% | 56.19% |
+| Validation | Hybrid | 42.94% | 75.26% |
+| Test | BM25 | 29.71% | 56.42% |
+| Test | Hybrid | 40.00% | 75.98% |
+
+The calculations use the actual per-question gold counts and saved candidate rankings,
+not the median counts in the split summary. The aggregate output and definitions are
+in [`results/recall_ceiling.json`](results/recall_ceiling.json). These ceilings apply
+to this project's closed searchable corpus and annotated gold set, not to biomedical
+retrieval over PubMed in general.
+
 ## Method
 
 ```text
@@ -105,6 +155,21 @@ python -m pip install -e ".[all]"
 PyTorch automatically uses CUDA where available. The scripts also support CPU and
 Apple Metal, with an MPS fallback enabled for unsupported operations.
 
+The original neural experiments ran with Python 3.12.14, NumPy 2.5.3, PyTorch 2.14.1,
+and Transformers 5.18.0. [`requirements-experiment.txt`](requirements-experiment.txt)
+records that environment's complete package freeze; the ranges in `pyproject.toml`
+remain the portable installation specification. Data preparation, plotting, and test
+tools are provided by the corresponding project extras.
+
+Model and dataset downloads are pinned to the revisions used by the experiment:
+
+| Artifact | Revision |
+|---|---|
+| `JJBauer/bioasq-14b` | `451e95d26c5baadcb825dde145afb1f88c2d21b8` |
+| `ncbi/MedCPT-Cross-Encoder` | `71caf65d4927987813984f54c284405a13fcca49` |
+| `ncbi/MedCPT-Query-Encoder` | `d83a36cc6b8e3a5c5e9d9d6ba156808c1643dcbc` |
+| `ncbi/MedCPT-Article-Encoder` | `d05a736da4bb84ee4057b7f7999485be6ed85465` |
+
 ## Prepare the data
 
 The raw BioASQ and PubMed data are not committed. Download the pinned BioASQ
@@ -149,10 +214,18 @@ Neural evaluation is computationally expensive. Intermediate candidate lists,
 embeddings, checkpoints, and logs are written under `data/processed/` and ignored by
 Git.
 
-Generate the result figure from the committed aggregate metrics with:
+Cached rankings are validated before they are reused. A split is complete only when
+all expected question IDs are present; duplicate IDs, missing questions, malformed
+candidate lists, and mismatched candidate/logit lengths stop the run with an error.
+An interrupted run resumes only the missing or unscored questions.
+
+Recompute the Recall@20 ceilings from the saved per-question rankings, then generate
+both result figures with:
 
 ```bash
+python scripts/analyze_recall_ceiling.py
 python scripts/plot_results.py
+python scripts/plot_recall_ceiling.py
 ```
 
 ## Error analysis
@@ -166,6 +239,22 @@ candidates.
 The MedCPT bi-encoder alone did not beat BM25 at rank 20, but it recovered 593 of the
 712 annotated test articles absent from BM25's top 200. Its value was complementary
 candidate coverage rather than direct top-20 ranking.
+
+One saved test example shows that complementarity. For “Are biologics used in
+pancreatic cancer?” the question has 15 annotated articles. BM25 found one in its top
+20, while the hybrid system found nine. Four of the hybrid's first five results had
+appeared only at BM25 ranks 57, 93, 153, and 199:
+
+| Hybrid rank | PMID | Annotated relevant | BM25 rank |
+|---:|---|---:|---:|
+| 1 | [33014285](https://pubmed.ncbi.nlm.nih.gov/33014285/) | Yes | 93 |
+| 2 | [14599095](https://pubmed.ncbi.nlm.nih.gov/14599095/) | Yes | 199 |
+| 3 | [18518788](https://pubmed.ncbi.nlm.nih.gov/18518788/) | Yes | 57 |
+| 4 | [28736633](https://pubmed.ncbi.nlm.nih.gov/28736633/) | Yes | 1 |
+| 5 | [26798437](https://pubmed.ncbi.nlm.nih.gov/26798437/) | Yes | 153 |
+
+The question, titles, ranks, and provenance are saved in
+[`results/retrieval_example.json`](results/retrieval_example.json).
 
 ## Limitations
 
@@ -198,18 +287,29 @@ candidate coverage rather than direct top-20 ranking.
 │   ├── rerank_medcpt.py
 │   ├── train_lora_reranker.py
 │   ├── rerank_medcpt_bi.py
-│   └── rerank_union_lora.py
-├── results/metrics.json
+│   ├── rerank_union_lora.py
+│   ├── ranking_cache.py
+│   ├── analyze_recall_ceiling.py
+│   ├── plot_results.py
+│   └── plot_recall_ceiling.py
+├── results/
+│   ├── metrics.json
+│   ├── recall_ceiling.json
+│   └── retrieval_example.json
+├── docs/
+│   ├── retrieval-results.png
+│   └── recall-ceilings.png
 ├── weights/medcpt-cross-encoder-lora.pt
+├── requirements-experiment.txt
 ├── tests/
 └── data/                         # local, ignored experiment data
 ```
 
 ## Tests
 
-The lightweight test suite checks parsing, split assignment, retrieval metrics,
-committed result consistency, and the adapter checksum without downloading the dataset
-or neural models.
+The lightweight test suite checks parsing, split assignment, retrieval metrics, cache
+validation and resume behavior, ceiling calculations, committed result consistency,
+and the adapter checksum without downloading the dataset or neural models.
 
 ```bash
 ruff check .

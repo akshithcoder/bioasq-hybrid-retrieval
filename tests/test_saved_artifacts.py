@@ -6,6 +6,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 METRICS = ROOT / "results" / "metrics.json"
+CEILINGS = ROOT / "results" / "recall_ceiling.json"
 ADAPTER = ROOT / "weights" / "medcpt-cross-encoder-lora.pt"
 
 
@@ -34,3 +35,16 @@ def test_committed_adapter_checksum() -> None:
     expected = load_metrics()["lora"]["adapter_sha256"]
     digest = hashlib.sha256(ADAPTER.read_bytes()).hexdigest()
     assert digest == expected
+
+
+def test_committed_recall_ceilings_match_metrics() -> None:
+    metrics = load_metrics()
+    systems = {row["name"]: row for row in metrics["systems"]}
+    ceilings = json.loads(CEILINGS.read_text())["splits"]
+    for split in ("validation", "test"):
+        result = ceilings[split]
+        hybrid = systems["BM25/MedCPT union + LoRA reranker"][f"{split}_recall_at_20"]
+        assert result["questions"] == 340
+        assert result["systems"]["hybrid"]["recall_at_20"] == pytest.approx(hybrid)
+        assert result["ceilings"]["top_20_capacity"] >= result["ceilings"]["hybrid_candidate_restricted"]
+        assert result["ceilings"]["hybrid_candidate_restricted"] >= hybrid

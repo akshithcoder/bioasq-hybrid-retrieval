@@ -1,11 +1,4 @@
-"""One LoRA pass on the MedCPT cross-encoder.
-
-BM25 stays at k1=0.9, b=0.40 and still supplies the top 200. Each training
-question contributes at most 8 gold articles from that list, each paired
-with one non-gold article from the same list. LoRA rank 8, alpha 16,
-learning rate 1e-4, one pass. Edition 12 and edition 13 are then rescored
-on the same top-200 lists the frozen reranker used.
-"""
+"""Train one pairwise LoRA pass on BM25 top-200 candidates."""
 
 from __future__ import annotations
 
@@ -25,6 +18,7 @@ import torch.nn as nn
 from torch.optim import AdamW
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ranking_cache as cache
 import rerank_medcpt as rr
 import tune_bm25 as bm
 
@@ -327,6 +321,7 @@ def train(tokenizer, model, device, texts: dict[str, str], batch_pairs: int, tim
         {
             "settings": {
                 "model": rr.MODEL_NAME,
+                "model_revision": rr.MODEL_REVISION,
                 "rank": RANK,
                 "alpha": ALPHA,
                 "dropout": DROPOUT,
@@ -348,26 +343,26 @@ def train(tokenizer, model, device, texts: dict[str, str], batch_pairs: int, tim
 
 
 def load_jsonl(path: Path) -> dict[str, dict]:
-    rows = {}
-    if not path.exists():
-        return rows
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        rows[row["id"]] = row
-    return rows
+    return cache.load_rankings(
+        path,
+        min_candidates=rr.MAX_DEPTH,
+        max_candidates=rr.MAX_DEPTH,
+        require_logits=True,
+    )
 
 
 def evaluate(split: str, texts, questions, tokenizer, model, device) -> dict:
-    frozen_rows = load_jsonl(rr.score_path(split))
+    expected_ids = [question["id"] for question in rr.questions_for(split)]
+    frozen_rows = rr.load_scored(rr.score_path(split))
+    cache.require_complete(frozen_rows, expected_ids, source=str(rr.score_path(split)))
     out_path = LORA_DIR / f"{split}_top200.jsonl"
     done = load_jsonl(out_path)
-    pending = [row for row in frozen_rows.values() if row["id"] not in done]
+    cache.missing_question_ids(done, expected_ids, source=str(out_path))
+    for qid, saved in done.items():
+        source = frozen_rows[qid]
+        if saved["gold"] != source["gold"] or saved["pmids"] != source["pmids"]:
+            raise ValueError(f"{out_path}: stale candidates for {qid}")
+    pending = [frozen_rows[qid] for qid in expected_ids if qid not in done]
     print(f"{split}: {len(done)} already scored, {len(pending)} left", flush=True)
     enable_lora_dropout(model, False)
     started = time.perf_counter()
@@ -386,8 +381,9 @@ def evaluate(split: str, texts, questions, tokenizer, model, device) -> dict:
             if index % 10 == 0:
                 print(f"{split}: scored {index}/{len(pending)}", flush=True)
     scored = load_jsonl(out_path)
-    rows = list(scored.values())
-    frozen = [frozen_rows[row["id"]] for row in rows]
+    cache.require_complete(scored, expected_ids, source=str(out_path))
+    rows = [scored[qid] for qid in expected_ids]
+    frozen = [frozen_rows[qid] for qid in expected_ids]
     return {
         "questions": len(rows),
         "frozen_recall_at_20": rr.mean_recall(frozen, rr.MAX_DEPTH),
@@ -440,6 +436,7 @@ def main() -> None:
     save_times(times)
     payload = {
         "model": rr.MODEL_NAME,
+        "model_revision": rr.MODEL_REVISION,
         "passes": PASSES,
         "rank": RANK,
         "alpha": ALPHA,

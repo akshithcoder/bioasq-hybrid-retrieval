@@ -1,0 +1,45 @@
+{
+  "provenance": "Saved edition-13 test rankings and the local searchable corpus",
+  "question_id": "67e2b8a818b1e36f2e000091",
+  "question": "Are biologics used in pancreatic cancer?",
+  "annotated_articles": 15,
+  "bm25_gold_in_top_20": 1,
+  "hybrid_gold_in_top_20": 9,
+  "hybrid_top_results": [
+    {
+      "rank": 1,
+      "pmid": "33014285",
+      "title": "A comprehensive analysis of clinical trials in pancreatic cancer: what is coming down the pike?",
+      "annotated_relevant": true,
+      "bm25_rank": 93
+    },
+    {
+      "rank": 2,
+      "pmid": "14599095",
+      "title": "Advanced pancreatic cancer: is there a role for combination therapy?",
+      "annotated_relevant": true,
+      "bm25_rank": 199
+    },
+    {
+      "rank": 3,
+      "pmid": "18518788",
+      "title": "Erlotinib: the first biologic in the management of pancreatic cancer.",
+      "annotated_relevant": true,
+      "bm25_rank": 57
+    },
+    {
+      "rank": 4,
+      "pmid": "28736633",
+      "title": "Biologics in gastrointestinal and pancreatic neuroendocrine tumors.",
+      "annotated_relevant": true,
+      "bm25_rank": 1
+    },
+    {
+      "rank": 5,
+      "pmid": "26798437",
+      "title": "State of the art biological therapies in pancreatic cancer.",
+      "annotated_relevant": true,
+      "bm25_rank": 153
+    }
+  ]
+}

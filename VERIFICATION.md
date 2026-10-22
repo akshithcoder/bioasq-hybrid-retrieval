@@ -8,7 +8,7 @@ Verified on 2026-10-22 on macOS with Python 3.12.14.
 - Installed the `test`, `neural`, `data`, and `plots` optional dependencies.
 - `python -m pip check`: no broken requirements.
 - `ruff check .`: passed.
-- `pytest -q`: 10 tests passed.
+- `pytest -q`: 20 tests passed.
 - Loaded `ncbi/MedCPT-Cross-Encoder` and the committed LoRA adapter on Apple Metal.
   The adapter contained 48 tensors. A two-pair inference smoke test returned finite
   scores and ranked the medically relevant article above an unrelated article.
@@ -20,7 +20,19 @@ Verified on 2026-10-22 on macOS with Python 3.12.14.
 - Recomputed every validation and test neural Recall@20 value in the README from the
   saved per-question candidate rankings and logits. Full-coverage values also matched.
 - Regenerated `docs/retrieval-results.png` from `results/metrics.json`.
+- Computed the top-20 capacity and hybrid candidate-restricted oracle from all 340
+  saved per-question rankings in each split. The committed aggregate values in
+  `results/recall_ceiling.json` matched a fresh run exactly.
+- Validated all ten original BM25, dense, LoRA, dense-LoRA, and union ranking files for
+  complete question coverage, unique IDs and candidates, and matching candidate/logit
+  lengths. The BM25 and dense inputs also agree with the current question text and
+  searchable-corpus gold PMIDs.
+- Confirmed that all three pinned MedCPT revisions and the pinned BioASQ dataset
+  revision remain available from Hugging Face.
+- Regenerated `docs/recall-ceilings.png` from `results/recall_ceiling.json`.
 - Checked every external README link successfully.
+- The CI run for the published commit `a20bf11` completed successfully:
+  [GitHub Actions run 39861331018](https://github.com/akshithcoder/bioasq-hybrid-retrieval/actions/runs/39861331018).
 
 ## Reproduced metrics
 
@@ -46,7 +58,7 @@ Precision@10 of 0.6532352941.
   inference were verified instead.
 - Full MedCPT encoding and reranking were not repeated. Neural metrics were recomputed
   from the saved per-question candidate lists and logits.
-- GitHub Actions cannot be observed until the repository is pushed. Its two commands
-  were run successfully in the clean local environment.
+- The current review changes were not committed or pushed, so no remote GitHub Actions
+  run exists for them. Ruff and pytest were run successfully in the local environment.
 
 No historical experiment artifact in the original research workspace was modified.

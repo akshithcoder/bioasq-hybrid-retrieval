@@ -1,11 +1,4 @@
-"""Train a new LoRA adapter on the bi-encoder's top 200.
-
-Positives are gold articles inside that list, at most 8 per question.
-Each positive gets a different non-gold article from the same list.
-Editions 1-11, one pass, same LoRA settings as the BM25 adapter.
-The BM25 adapter is left untouched. Edition 12 and 13 are reranked
-on the bi-encoder lists already saved.
-"""
+"""Train the LoRA reranker ablation on dense top-200 candidates."""
 
 from __future__ import annotations
 
@@ -24,6 +17,7 @@ import torch
 from torch.optim import AdamW
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ranking_cache as cache
 import rerank_medcpt as rr
 import rerank_medcpt_bi as bi
 import train_lora_reranker as lora
@@ -46,10 +40,6 @@ def fmt(seconds: float) -> str:
 
 def save_times(times: dict) -> None:
     TIMES_PATH.write_text(json.dumps(times, indent=2))
-
-
-def load_jsonl(path: Path) -> dict[str, dict]:
-    return lora.load_jsonl(path)
 
 
 def build_pairs() -> dict:
@@ -199,9 +189,22 @@ def train(tokenizer, model, device, texts: dict[str, str], batch_pairs: int, tim
 
 
 def score_split(split: str, texts: dict[str, str], tokenizer, model, device) -> list[dict]:
-    source = list(load_jsonl(bi.candidate_path(split)).values())
+    expected_ids = [question["id"] for question in rr.questions_for(split)]
+    source_by_id = bi.load_jsonl(bi.candidate_path(split))
+    cache.require_complete(source_by_id, expected_ids, source=str(bi.candidate_path(split)))
+    source = [source_by_id[qid] for qid in expected_ids]
     out_path = OUT_DIR / f"{split}_top200.jsonl"
-    done = load_jsonl(out_path)
+    done = cache.load_rankings(
+        out_path,
+        min_candidates=DEPTH,
+        max_candidates=DEPTH,
+        require_logits=True,
+    )
+    cache.missing_question_ids(done, expected_ids, source=str(out_path))
+    for qid, saved in done.items():
+        current = source_by_id[qid]
+        if saved["gold"] != current["gold"] or saved["pmids"] != current["pmids"]:
+            raise ValueError(f"{out_path}: stale candidates for {qid}")
     pending = [row for row in source if row["id"] not in done]
     print(f"{split}: {len(done)} already scored, {len(pending)} left", flush=True)
     lora.enable_lora_dropout(model, False)
@@ -216,7 +219,14 @@ def score_split(split: str, texts: dict[str, str], tokenizer, model, device) -> 
             handle.flush()
             if index % 10 == 0 or index == len(pending):
                 print(f"{split}: scored {index}/{len(pending)}", flush=True)
-    return list(load_jsonl(out_path).values())
+    scored = cache.load_rankings(
+        out_path,
+        min_candidates=DEPTH,
+        max_candidates=DEPTH,
+        require_logits=True,
+    )
+    cache.require_complete(scored, expected_ids, source=str(out_path))
+    return [scored[qid] for qid in expected_ids]
 
 
 def mean_recall(rows: list[dict], rerank: bool, k: int) -> float:
@@ -270,6 +280,9 @@ def main() -> None:
 
     payload = {
         "first_stage": "medcpt bi-encoder top 200",
+        "query_encoder_revision": bi.QUERY_REVISION,
+        "article_encoder_revision": bi.ARTICLE_REVISION,
+        "reranker_revision": rr.MODEL_REVISION,
         "negatives": "unique within each question",
         "train_questions": meta["questions_used"],
         "train_pairs": meta["pairs"],
@@ -281,7 +294,19 @@ def main() -> None:
     }
     for split in ("validation", "test"):
         rows = score_split(split, texts, tokenizer, model, device)
-        previous = list(load_jsonl(bi.candidate_path(split)).values())
+        previous_by_id = cache.load_rankings(
+            bi.candidate_path(split),
+            min_candidates=DEPTH,
+            max_candidates=DEPTH,
+            require_question=True,
+            require_logits=True,
+        )
+        cache.require_complete(
+            previous_by_id,
+            [row["id"] for row in rows],
+            source=str(bi.candidate_path(split)),
+        )
+        previous = [previous_by_id[row["id"]] for row in rows]
         payload[split] = {
             "questions": len(rows),
             "bi_encoder_recall_at_20": mean_recall(rows, False, 20),

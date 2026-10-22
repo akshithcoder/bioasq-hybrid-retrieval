@@ -1,0 +1,101 @@
+{
+  "metric": "macro Recall@20",
+  "top_k_capacity_definition": "mean(min(20, gold_count) / gold_count)",
+  "candidate_restricted_definition": "mean(min(20, gold_in_union_candidates) / gold_count)",
+  "gold_definition": "Unique annotated gold PMIDs available in the searchable corpus, as saved with each ranking.",
+  "source_artifacts": {
+    "questions": "training14b.json",
+    "bm25": "rerank/{split}_top200.jsonl",
+    "hybrid": "union_lora/{split}_union.jsonl"
+  },
+  "splits": {
+    "validation": {
+      "questions": 340,
+      "gold_articles_per_question": {
+        "median": 16.0,
+        "mean": 19.729411764705883,
+        "maximum": 86,
+        "over_20_questions": 146,
+        "over_20_fraction": 0.4294117647058823,
+        "full_recall_possible_questions": 194,
+        "full_recall_possible_fraction": 0.5705882352941176
+      },
+      "ceilings": {
+        "top_20_capacity": 0.8399270546388722,
+        "hybrid_candidate_restricted": 0.8342668178168706,
+        "candidate_exclusion_gap": 0.005660236822001563
+      },
+      "systems": {
+        "bm25": {
+          "recall_at_20": 0.6928069748859756,
+          "absolute_gap_to_top_20_capacity": 0.14712007975289654,
+          "fraction_of_top_20_capacity_achieved": 0.8248418372281733,
+          "full_coverage_at_20_questions": 109,
+          "full_coverage_at_20": 0.3205882352941177,
+          "full_coverage_at_20_among_possible_questions": 0.5618556701030928
+        },
+        "hybrid": {
+          "recall_at_20": 0.7654934976774985,
+          "absolute_gap_to_top_20_capacity": 0.07443355696137366,
+          "fraction_of_top_20_capacity_achieved": 0.9113809270099337,
+          "full_coverage_at_20_questions": 146,
+          "full_coverage_at_20": 0.4294117647058823,
+          "full_coverage_at_20_among_possible_questions": 0.7525773195876289,
+          "absolute_gap_to_candidate_restricted_ceiling": 0.0687733201393721,
+          "fraction_of_candidate_restricted_ceiling_achieved": 0.9175643587032027
+        }
+      },
+      "hybrid_gap_attribution": {
+        "total_gap_to_top_20_capacity": 0.07443355696137366,
+        "candidate_exclusion_gap": 0.005660236822001563,
+        "ranking_gap_to_candidate_oracle": 0.0687733201393721,
+        "candidate_exclusion_share_of_total_gap": 0.07604415337747289,
+        "ranking_share_of_total_gap": 0.9239558466225272
+      }
+    },
+    "test": {
+      "questions": 340,
+      "gold_articles_per_question": {
+        "median": 18.0,
+        "mean": 25.961764705882352,
+        "maximum": 125,
+        "over_20_questions": 161,
+        "over_20_fraction": 0.47352941176470587,
+        "full_recall_possible_questions": 179,
+        "full_recall_possible_fraction": 0.5264705882352941
+      },
+      "ceilings": {
+        "top_20_capacity": 0.7720326563601417,
+        "hybrid_candidate_restricted": 0.7690438602449352,
+        "candidate_exclusion_gap": 0.0029887961152065268
+      },
+      "systems": {
+        "bm25": {
+          "recall_at_20": 0.6434538265344669,
+          "absolute_gap_to_top_20_capacity": 0.1285788298256748,
+          "fraction_of_top_20_capacity_achieved": 0.8334541566779337,
+          "full_coverage_at_20_questions": 101,
+          "full_coverage_at_20": 0.29705882352941176,
+          "full_coverage_at_20_among_possible_questions": 0.5642458100558659
+        },
+        "hybrid": {
+          "recall_at_20": 0.7190013065914587,
+          "absolute_gap_to_top_20_capacity": 0.05303134976868307,
+          "fraction_of_top_20_capacity_achieved": 0.9313094474284197,
+          "full_coverage_at_20_questions": 136,
+          "full_coverage_at_20": 0.4,
+          "full_coverage_at_20_among_possible_questions": 0.7597765363128491,
+          "absolute_gap_to_candidate_restricted_ceiling": 0.05004255365347654,
+          "fraction_of_candidate_restricted_ceiling_achieved": 0.9349288691576858
+        }
+      },
+      "hybrid_gap_attribution": {
+        "total_gap_to_top_20_capacity": 0.05303134976868307,
+        "candidate_exclusion_gap": 0.0029887961152065268,
+        "ranking_gap_to_candidate_oracle": 0.05004255365347654,
+        "candidate_exclusion_share_of_total_gap": 0.05635904287262775,
+        "ranking_share_of_total_gap": 0.9436409571273723
+      }
+    }
+  }
+}

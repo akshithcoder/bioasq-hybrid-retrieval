@@ -1,7 +1,4 @@
-"""Rerank the union of BM25's top 200 and the bi-encoder's top 200.
-
-The adapter is the one trained on BM25's list. No new training.
-"""
+"""Rerank the BM25/MedCPT candidate union with the saved LoRA adapter."""
 
 from __future__ import annotations
 
@@ -17,6 +14,7 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ranking_cache as cache
 import rerank_medcpt as rr
 import rerank_medcpt_bi as bi
 import train_lora_reranker as lora
@@ -30,16 +28,16 @@ def fmt(seconds: float) -> str:
     return lora.fmt(seconds)
 
 
-def load_jsonl(path: Path) -> dict[str, dict]:
-    return lora.load_jsonl(path)
-
-
 def union_rows(split: str) -> list[dict]:
-    bm25_rows = load_jsonl(rr.score_path(split))
-    bi_rows = load_jsonl(bi.candidate_path(split))
+    expected_ids = [question["id"] for question in rr.questions_for(split)]
+    bm25_rows = rr.load_scored(rr.score_path(split))
+    cache.require_complete(bm25_rows, expected_ids, source=str(rr.score_path(split)))
+    bi_rows = bi.load_jsonl(bi.candidate_path(split))
+    cache.require_complete(bi_rows, expected_ids, source=str(bi.candidate_path(split)))
     questions = {q["id"]: q["question"] for q in bm.load_questions()}
     rows = []
-    for qid, bm25 in bm25_rows.items():
+    for qid in expected_ids:
+        bm25 = bm25_rows[qid]
         other = bi_rows[qid]
         if bm25["gold"] != other["gold"]:
             raise ValueError(f"gold mismatch for {qid}")
@@ -62,8 +60,20 @@ def union_rows(split: str) -> list[dict]:
 
 def score_split(split: str, texts: dict[str, str], tokenizer, model, device) -> list[dict]:
     source = union_rows(split)
+    source_by_id = {row["id"]: row for row in source}
+    expected_ids = [row["id"] for row in source]
     out_path = OUT_DIR / f"{split}_union.jsonl"
-    done = load_jsonl(out_path)
+    done = cache.load_rankings(
+        out_path,
+        min_candidates=200,
+        max_candidates=400,
+        require_logits=True,
+    )
+    cache.missing_question_ids(done, expected_ids, source=str(out_path))
+    for qid, saved in done.items():
+        current = source_by_id[qid]
+        if saved["gold"] != current["gold"] or saved["pmids"] != current["pmids"]:
+            raise ValueError(f"{out_path}: stale candidates for {qid}")
     pending = [row for row in source if row["id"] not in done]
     print(
         f"{split}: {len(done)} already scored, {len(pending)} left, "
@@ -84,7 +94,13 @@ def score_split(split: str, texts: dict[str, str], tokenizer, model, device) -> 
             handle.flush()
             if index % 10 == 0 or index == len(pending):
                 print(f"{split}: scored {index}/{len(pending)}", flush=True)
-    saved = load_jsonl(out_path)
+    saved = cache.load_rankings(
+        out_path,
+        min_candidates=200,
+        max_candidates=400,
+        require_logits=True,
+    )
+    cache.require_complete(saved, expected_ids, source=str(out_path))
     return [saved[row["id"]] for row in source]
 
 
@@ -120,6 +136,7 @@ def main() -> None:
     payload = {
         "candidates": "union of BM25 top 200 and MedCPT bi-encoder top 200",
         "reranker": "LoRA trained on BM25 top 200",
+        "reranker_revision": rr.MODEL_REVISION,
         "adapter": str(lora.ADAPTER_PATH),
     }
     for split in ("validation", "test"):

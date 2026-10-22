@@ -1,9 +1,4 @@
-"""Rerank BM25's short list with the frozen MedCPT cross-encoder.
-
-BM25 stays at k1=0.9, b=0.40. On validation the cross-encoder scores the top
-200 articles, and list lengths 50, 100, and 200 are compared by Recall@20.
-The winning length is then used once on the test questions.
-"""
+"""Rerank BM25 candidates with the frozen MedCPT cross-encoder."""
 
 from __future__ import annotations
 
@@ -16,11 +11,13 @@ import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ranking_cache as cache
 import tune_bm25 as bm
 
 K1 = 0.9
 B = 0.4
 MODEL_NAME = "ncbi/MedCPT-Cross-Encoder"
+MODEL_REVISION = "71caf65d4927987813984f54c284405a13fcca49"
 CANDIDATE_DEPTHS = (50, 100, 200)
 MAX_DEPTH = 200
 RECALL_K = 20
@@ -86,14 +83,12 @@ def score_path(split: str) -> Path:
 
 
 def load_scored(path: Path) -> dict[str, dict]:
-    scored = {}
-    if not path.exists():
-        return scored
-    for line in path.read_text().splitlines():
-        if line.strip():
-            row = json.loads(line)
-            scored[row["id"]] = row
-    return scored
+    return cache.load_rankings(
+        path,
+        min_candidates=MAX_DEPTH,
+        max_candidates=MAX_DEPTH,
+        require_logits=True,
+    )
 
 
 def score_pairs(pairs, tokenizer, model, device):
@@ -117,15 +112,22 @@ def score_pairs(pairs, tokenizer, model, device):
 def ensure_scores(split: str, depth: int, texts, pmid_to_row, row_to_pmid, idf, posting_docs, posting_tfs, length_norm, tokenizer, model, device):
     path = score_path(split)
     path.parent.mkdir(parents=True, exist_ok=True)
+    questions = []
+    for question in questions_for(split):
+        gold = [pmid for pmid in gold_pmids(question) if pmid in pmid_to_row]
+        if gold:
+            questions.append((question, gold))
+    expected_ids = [question["id"] for question, _ in questions]
     scored = load_scored(path)
-    questions = questions_for(split)
-    pending = [q for q in questions if q["id"] not in scored]
+    missing = set(cache.missing_question_ids(scored, expected_ids, source=str(path)))
+    expected_gold = {question["id"]: gold for question, gold in questions}
+    for qid, saved in scored.items():
+        if saved["gold"] != expected_gold[qid]:
+            raise ValueError(f"{path}: stale gold PMIDs for {qid}")
+    pending = [(question, gold) for question, gold in questions if question["id"] in missing]
     print(f"{split}: {len(scored)} already scored, {len(pending)} left", flush=True)
     with path.open("a") as handle:
-        for index, question in enumerate(pending, start=1):
-            gold = [pmid for pmid in gold_pmids(question) if pmid in pmid_to_row]
-            if not gold:
-                continue
+        for index, (question, gold) in enumerate(pending, start=1):
             pmids = bm25_top(
                 question, pmid_to_row, row_to_pmid, idf, posting_docs, posting_tfs, length_norm, depth
             )
@@ -136,7 +138,9 @@ def ensure_scores(split: str, depth: int, texts, pmid_to_row, row_to_pmid, idf, 
             handle.flush()
             if index % 10 == 0:
                 print(f"{split}: scored {index}/{len(pending)}", flush=True)
-    return load_scored(path)
+    scored = load_scored(path)
+    cache.require_complete(scored, expected_ids, source=str(path))
+    return scored
 
 
 def mean_recall(rows: list[dict], depth: int) -> float:
@@ -173,8 +177,8 @@ def best_device() -> torch.device:
 
 def load_model():
     device = best_device()
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, revision=MODEL_REVISION)
+    model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, revision=MODEL_REVISION)
     model.to(device)
     model.eval()
     print(f"model on {device}", flush=True)
@@ -224,6 +228,7 @@ def main() -> None:
     test_rows = list(test.values())
     payload = {
         "model": MODEL_NAME,
+        "model_revision": MODEL_REVISION,
         "bm25": {"k1": K1, "b": B},
         "metric": "mean Recall@20",
         "rule": "highest validation Recall@20 over candidate depths 50, 100, 200",

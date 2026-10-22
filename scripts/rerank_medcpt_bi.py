@@ -1,9 +1,4 @@
-"""First-stage MedCPT bi-encoder, then the trained LoRA cross-encoder.
-
-The bi-encoder embeds every indexed article once and each question once.
-Dot product keeps the top 200. The existing LoRA adapter reranks that list.
-No new training. Query length 64 and article length 512 are MedCPT's settings.
-"""
+"""Build dense MedCPT candidates and rerank them with the saved LoRA adapter."""
 
 from __future__ import annotations
 
@@ -20,12 +15,15 @@ import torch
 from transformers import AutoModel, AutoTokenizer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ranking_cache as cache
 import rerank_medcpt as rr
 import train_lora_reranker as lora
 import tune_bm25 as bm
 
 QUERY_MODEL = "ncbi/MedCPT-Query-Encoder"
+QUERY_REVISION = "d83a36cc6b8e3a5c5e9d9d6ba156808c1643dcbc"
 ARTICLE_MODEL = "ncbi/MedCPT-Article-Encoder"
+ARTICLE_REVISION = "d05a736da4bb84ee4057b7f7999485be6ed85465"
 QUERY_MAX_LENGTH = 64
 ARTICLE_MAX_LENGTH = 512
 DEPTH = 200
@@ -59,19 +57,12 @@ def load_articles() -> list[dict]:
 
 
 def load_jsonl(path: Path) -> dict[str, dict]:
-    rows = {}
-    if not path.exists():
-        return rows
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        rows[row["id"]] = row
-    return rows
+    return cache.load_rankings(
+        path,
+        min_candidates=DEPTH,
+        max_candidates=DEPTH,
+        require_question=True,
+    )
 
 
 def questions_for(edition: int) -> list[dict]:
@@ -85,8 +76,8 @@ def embed_articles(articles: list[dict]) -> np.ndarray:
             print(f"article embeddings already saved ({len(saved)})", flush=True)
             return np.load(EMBED_PATH)
     device = rr.best_device()
-    tokenizer = AutoTokenizer.from_pretrained(ARTICLE_MODEL)
-    model = AutoModel.from_pretrained(ARTICLE_MODEL).to(device).eval()
+    tokenizer = AutoTokenizer.from_pretrained(ARTICLE_MODEL, revision=ARTICLE_REVISION)
+    model = AutoModel.from_pretrained(ARTICLE_MODEL, revision=ARTICLE_REVISION).to(device).eval()
     print(f"article encoder on {device}", flush=True)
     pieces = []
     started = time.perf_counter()
@@ -117,8 +108,8 @@ def embed_articles(articles: list[dict]) -> np.ndarray:
 
 def embed_queries(questions: list[dict]) -> np.ndarray:
     device = rr.best_device()
-    tokenizer = AutoTokenizer.from_pretrained(QUERY_MODEL)
-    model = AutoModel.from_pretrained(QUERY_MODEL).to(device).eval()
+    tokenizer = AutoTokenizer.from_pretrained(QUERY_MODEL, revision=QUERY_REVISION)
+    model = AutoModel.from_pretrained(QUERY_MODEL, revision=QUERY_REVISION).to(device).eval()
     print(f"query encoder on {device}", flush=True)
     texts = [question["question"] for question in questions]
     pieces = []
@@ -140,24 +131,33 @@ def candidate_path(split: str) -> Path:
     return OUT_DIR / f"{split}_top200.jsonl"
 
 
-def build_candidates(split: str, edition: int, articles: list[dict], embeds: np.ndarray) -> None:
+def build_candidates(split: str, edition: int, articles: list[dict], embeds: np.ndarray) -> list[str]:
     path = candidate_path(split)
-    if path.exists() and len(load_jsonl(path)) >= 300:
-        print(f"{split} candidates already built", flush=True)
-        return
     pmid_to_row = {article["pmid"]: index for index, article in enumerate(articles)}
     questions = []
     for question in questions_for(edition):
         gold = [pmid for pmid in rr.gold_pmids(question) if pmid in pmid_to_row]
         if gold:
             questions.append((question, gold))
+    expected_ids = [question["id"] for question, _ in questions]
+    saved = load_jsonl(path)
+    missing = set(cache.missing_question_ids(saved, expected_ids, source=str(path)))
+    expected = {question["id"]: (question["question"], gold) for question, gold in questions}
+    for qid, row in saved.items():
+        expected_question, expected_gold = expected[qid]
+        if row["question"] != expected_question or row["gold"] != expected_gold:
+            raise ValueError(f"{path}: stale question or gold PMIDs for {qid}")
+    if not missing:
+        print(f"{split} candidates already built", flush=True)
+        return expected_ids
+    pending = [(question, gold) for question, gold in questions if question["id"] in missing]
     started = time.perf_counter()
-    query_embeds = embed_queries([question for question, _ in questions])
+    query_embeds = embed_queries([question for question, _ in pending])
     scores = query_embeds @ embeds.T
     pmids = [article["pmid"] for article in articles]
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as handle:
-        for index, ((question, gold), row) in enumerate(zip(questions, scores), start=1):
+    with path.open("a") as handle:
+        for index, ((question, gold), row) in enumerate(zip(pending, scores), start=1):
             chosen = np.argpartition(row, -DEPTH)[-DEPTH:]
             order = chosen[np.argsort(-row[chosen])]
             payload = {
@@ -167,14 +167,19 @@ def build_candidates(split: str, edition: int, articles: list[dict], embeds: np.
                 "pmids": [pmids[int(item)] for item in order],
             }
             handle.write(json.dumps(payload) + "\n")
-            if index % 50 == 0 or index == len(questions):
-                print(f"{split} candidates {index}/{len(questions)}", flush=True)
+            if index % 50 == 0 or index == len(pending):
+                print(f"{split} candidates {index}/{len(pending)}", flush=True)
+    saved = load_jsonl(path)
+    cache.require_complete(saved, expected_ids, source=str(path))
     print(f"{split} candidates in {fmt(time.perf_counter() - started)}", flush=True)
+    return expected_ids
 
 
-def score_split(split: str, texts: dict[str, str], tokenizer, model, device) -> None:
+def score_split(split: str, expected_ids: list[str], texts: dict[str, str], tokenizer, model, device) -> None:
     path = candidate_path(split)
-    rows = list(load_jsonl(path).values())
+    loaded = load_jsonl(path)
+    cache.require_complete(loaded, expected_ids, source=str(path))
+    rows = [loaded[qid] for qid in expected_ids]
     pending = [row for row in rows if "logits" not in row]
     done = {row["id"]: row for row in rows if "logits" in row}
     print(f"{split}: {len(done)} already reranked, {len(pending)} left", flush=True)
@@ -190,6 +195,14 @@ def score_split(split: str, texts: dict[str, str], tokenizer, model, device) -> 
                 for item in rows:
                     handle.write(json.dumps(scored.get(item["id"], item)) + "\n")
             print(f"{split}: reranked {index}/{len(pending)}", flush=True)
+    complete = cache.load_rankings(
+        path,
+        min_candidates=DEPTH,
+        max_candidates=DEPTH,
+        require_question=True,
+        require_logits=True,
+    )
+    cache.require_complete(complete, expected_ids, source=str(path))
 
 
 def mean_recall(rows: list[dict], ranked_of, k: int) -> float:
@@ -223,21 +236,24 @@ def main() -> None:
     articles = load_articles()
     texts = {article["pmid"]: rr.article_text(article) for article in articles}
     embeds = embed_articles(articles)
-    build_candidates("validation", 12, articles, embeds)
-    build_candidates("test", 13, articles, embeds)
+    validation_ids = build_candidates("validation", 12, articles, embeds)
+    test_ids = build_candidates("test", 13, articles, embeds)
     del embeds
     tokenizer, model, device = lora.prepare_model()
     saved = torch.load(lora.ADAPTER_PATH, map_location="cpu", weights_only=False)
     lora.load_lora_state(model, saved["lora"], device)
     lora.enable_lora_dropout(model, False)
     print("loaded LoRA adapter", flush=True)
-    score_split("validation", texts, tokenizer, model, device)
-    score_split("test", texts, tokenizer, model, device)
+    score_split("validation", validation_ids, texts, tokenizer, model, device)
+    score_split("test", test_ids, texts, tokenizer, model, device)
 
     payload = {
         "first_stage": QUERY_MODEL,
+        "first_stage_revision": QUERY_REVISION,
         "article_encoder": ARTICLE_MODEL,
+        "article_encoder_revision": ARTICLE_REVISION,
         "reranker": rr.MODEL_NAME,
+        "reranker_revision": rr.MODEL_REVISION,
         "query_max_length": QUERY_MAX_LENGTH,
         "article_max_length": ARTICLE_MAX_LENGTH,
         "depth": DEPTH,
