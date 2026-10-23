@@ -23,6 +23,22 @@ def test_saved_result_progression() -> None:
     assert hybrid - bm25 == pytest.approx(0.0755474800569914)
 
 
+def test_saved_recall_at_100_progression() -> None:
+    payload = load_metrics()
+    rows = {row["name"]: row for row in payload["systems"]}
+    bm25 = rows["BM25"]["test_recall_at_100"]
+    bi_encoder = rows["MedCPT bi-encoder"]["test_recall_at_100"]
+    hybrid = rows["BM25/MedCPT union + LoRA reranker"]["test_recall_at_100"]
+
+    assert bm25 == pytest.approx(0.9048314531721029)
+    assert bi_encoder == pytest.approx(0.9069377663588748)
+    assert hybrid == pytest.approx(0.9793512577093908)
+    assert hybrid - bm25 == pytest.approx(0.0745198045372879)
+    assert payload["recall_at_100_verification"]["historical_baseline_matching_system"] == (
+        "MedCPT bi-encoder"
+    )
+
+
 def test_full_coverage_counts_are_consistent() -> None:
     payload = load_metrics()
     rows = {row["name"]: row for row in payload["systems"]}
@@ -48,3 +64,21 @@ def test_committed_recall_ceilings_match_metrics() -> None:
         assert result["systems"]["hybrid"]["recall_at_20"] == pytest.approx(hybrid)
         assert result["ceilings"]["top_20_capacity"] >= result["ceilings"]["hybrid_candidate_restricted"]
         assert result["ceilings"]["hybrid_candidate_restricted"] >= hybrid
+        hybrid_100 = systems["BM25/MedCPT union + LoRA reranker"][f"{split}_recall_at_100"]
+        assert result["systems"]["hybrid"]["recall_at_100"] == pytest.approx(hybrid_100)
+        assert result["ceilings"]["top_100_capacity"] >= result["ceilings"][
+            "hybrid_candidate_restricted_at_100"
+        ]
+        assert result["ceilings"]["hybrid_candidate_restricted_at_100"] >= hybrid_100
+
+
+def test_saved_ranking_metrics_match_aggregate_results() -> None:
+    systems = {row["name"]: row for row in load_metrics()["systems"]}
+    splits = json.loads(CEILINGS.read_text())["splits"]
+    for split in ("validation", "test"):
+        for ranking_result in splits[split]["retrieval_systems"]:
+            aggregate = systems[ranking_result["name"]]
+            for top_k in (20, 100):
+                assert ranking_result[f"recall_at_{top_k}"] == pytest.approx(
+                    aggregate[f"{split}_recall_at_{top_k}"]
+                )

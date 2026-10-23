@@ -1,4 +1,4 @@
-"""Pick k1 and b for Recall@20 on validation, then score every split once."""
+"""Tune BM25 on validation Recall@20, then report Recall@20 and Recall@100."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tune_bm25 as bm
 
 TOP_K = 20
+EVALUATION_KS = (20, 100)
 OUT_PATH = bm.ROOT / "data" / "processed" / "bm25_recall20.json"
 
 
@@ -61,7 +62,7 @@ def grid_on_validation(questions, pmid_to_row, idf, posting_docs, posting_tfs, n
 
 
 def score_split(questions, k1, b, pmid_to_row, idf, posting_docs, posting_tfs, length_norm):
-    recalls = []
+    recalls = {top_k: [] for top_k in EVALUATION_KS}
     gold_counts = []
     skipped = 0
     n_docs = len(pmid_to_row)
@@ -77,7 +78,8 @@ def score_split(questions, k1, b, pmid_to_row, idf, posting_docs, posting_tfs, l
             tfs = posting_tfs[token]
             ln = length_norm[rows]
             scores[rows] += idf[token] * (tfs * (k1 + 1.0)) / (tfs + k1 * ln)
-        recalls.append(recall_at_k(scores, set(gold), TOP_K))
+        for top_k in EVALUATION_KS:
+            recalls[top_k].append(recall_at_k(scores, set(gold), top_k))
         gold_counts.append(len(gold))
     ordered = sorted(gold_counts)
     mid = len(ordered) // 2
@@ -86,10 +88,13 @@ def score_split(questions, k1, b, pmid_to_row, idf, posting_docs, posting_tfs, l
     else:
         median_gold = (ordered[mid - 1] + ordered[mid]) / 2
     return {
-        "questions_scored": len(recalls),
+        "questions_scored": len(recalls[20]),
         "questions_skipped_no_gold_in_corpus": skipped,
         "median_gold_articles": median_gold,
-        "recall_at_20": float(sum(recalls) / len(recalls)),
+        **{
+            f"recall_at_{top_k}": float(sum(values) / len(values))
+            for top_k, values in recalls.items()
+        },
     }
 
 
@@ -127,7 +132,8 @@ def main() -> None:
             grouped[name], k1, b, pmid_to_row, idf, posting_docs, posting_tfs, length_norm
         )
     payload = {
-        "metric": "mean Recall@20",
+        "metric": "macro Recall@K",
+        "reported_cutoffs": list(EVALUATION_KS),
         "rule": "highest validation Recall@20 wins; exact ties go to k1=1.2, b=0.75",
         "validation_questions_in_grid": used,
         "validation_skipped_in_grid": skipped,

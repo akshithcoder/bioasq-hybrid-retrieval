@@ -42,6 +42,41 @@ def test_capacity_and_candidate_ceilings_use_per_question_counts() -> None:
     assert result["systems"]["hybrid"]["recall_at_20"] == pytest.approx((1 + 15 / 30 + 3 / 5) / 3)
     assert result["ceilings"]["top_20_capacity"] >= result["ceilings"]["hybrid_candidate_restricted"]
     assert result["systems"]["hybrid"]["full_coverage_at_20_among_possible_questions"] == 0.5
+    assert result["gold_articles_per_question"]["over_100_questions"] == 0
+    assert result["gold_articles_per_question"]["full_recall_possible_at_100_questions"] == 3
+    assert result["ceilings"]["top_100_capacity"] == 1.0
+    assert result["ceilings"]["hybrid_candidate_restricted_at_100"] == pytest.approx(
+        (1 + 15 / 30 + 1) / 3
+    )
+    assert result["systems"]["hybrid"]["recall_at_100"] == pytest.approx(
+        (1 + 15 / 30 + 1) / 3
+    )
+
+
+def test_recall_at_100_separates_capacity_candidates_and_ranking() -> None:
+    gold = [f"g{index}" for index in range(125)]
+    bm25 = [row("q1", gold, gold[:60] + [f"b{index}" for index in range(140)])]
+    hybrid_pmids = (
+        gold[:70]
+        + [f"early-{index}" for index in range(30)]
+        + gold[70:90]
+        + [f"late-{index}" for index in range(80)]
+    )
+    hybrid = [row("q1", gold, hybrid_pmids)]
+
+    result = analyze_recall_ceiling.analyze_split(bm25, hybrid)
+
+    assert result["gold_articles_per_question"]["over_100_questions"] == 1
+    assert result["gold_articles_per_question"]["full_recall_possible_at_100_questions"] == 0
+    assert result["ceilings"]["top_100_capacity"] == pytest.approx(100 / 125)
+    assert result["ceilings"]["hybrid_candidate_restricted_at_100"] == pytest.approx(90 / 125)
+    assert result["systems"]["hybrid"]["recall_at_100"] == pytest.approx(70 / 125)
+    assert result["hybrid_gap_attribution_at_100"]["candidate_exclusion_gap"] == pytest.approx(
+        10 / 125
+    )
+    assert result["hybrid_gap_attribution_at_100"]["ranking_gap_to_candidate_oracle"] == pytest.approx(
+        20 / 125
+    )
 
 
 def test_mismatched_gold_sets_are_rejected() -> None:

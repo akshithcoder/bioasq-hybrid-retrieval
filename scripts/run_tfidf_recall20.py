@@ -1,4 +1,4 @@
-"""Evaluate the fixed TF-IDF cosine baseline at Recall@20."""
+"""Evaluate the fixed TF-IDF cosine baseline at Recall@20 and Recall@100."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tune_bm25 as bm
 
-TOP_K = 20
+TOP_KS = (20, 100)
 OUT_PATH = bm.ROOT / "data" / "processed" / "tfidf_length_recall20.json"
 
 
@@ -53,7 +53,7 @@ def build_normalized_weights(posting_docs, posting_tfs, lengths, n_docs):
 
 
 def score_split(questions, pmid_to_row, idf, posting_docs, normalized):
-    recalls = []
+    recalls = {top_k: [] for top_k in TOP_KS}
     gold_counts = []
     skipped = 0
     n_docs = len(pmid_to_row)
@@ -73,10 +73,11 @@ def score_split(questions, pmid_to_row, idf, posting_docs, normalized):
             query_norm = math.sqrt(sum(weight * weight for weight in query_weights.values()))
             for token, weight in query_weights.items():
                 scores[posting_docs[token]] += (weight / query_norm) * normalized[token]
-        recalls.append(recall_at_k(scores, set(gold), TOP_K))
+        for top_k in TOP_KS:
+            recalls[top_k].append(recall_at_k(scores, set(gold), top_k))
         gold_counts.append(len(gold))
-        if len(recalls) % 500 == 0:
-            print(f"scored {len(recalls)}", flush=True)
+        if len(recalls[20]) % 500 == 0:
+            print(f"scored {len(recalls[20])}", flush=True)
     ordered = sorted(gold_counts)
     mid = len(ordered) // 2
     if len(ordered) % 2:
@@ -84,10 +85,13 @@ def score_split(questions, pmid_to_row, idf, posting_docs, normalized):
     else:
         median_gold = (ordered[mid - 1] + ordered[mid]) / 2
     return {
-        "questions_scored": len(recalls),
+        "questions_scored": len(recalls[20]),
         "questions_skipped_no_gold_in_corpus": skipped,
         "median_gold_articles": median_gold,
-        "recall_at_20": float(sum(recalls) / len(recalls)),
+        **{
+            f"recall_at_{top_k}": float(sum(values) / len(values))
+            for top_k, values in recalls.items()
+        },
     }
 
 
@@ -113,7 +117,8 @@ def main() -> None:
         )
         print(name, split_scores[name], flush=True)
     payload = {
-        "metric": "mean Recall@20",
+        "metric": "macro Recall@K",
+        "cutoffs": list(TOP_KS),
         "method": "length-normalized tf-idf, then cosine",
         "tf": "count(word) / number of words",
         "idf": "ln((1+N)/(1+df))+1",

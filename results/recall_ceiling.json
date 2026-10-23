@@ -1,11 +1,17 @@
 {
   "metric": "macro Recall@20",
+  "additional_metric": "macro Recall@100",
   "top_k_capacity_definition": "mean(min(20, gold_count) / gold_count)",
   "candidate_restricted_definition": "mean(min(20, gold_in_union_candidates) / gold_count)",
+  "top_100_capacity_definition": "mean(min(100, gold_count) / gold_count)",
+  "candidate_restricted_at_100_definition": "mean(min(100, gold_in_union_candidates) / gold_count)",
   "gold_definition": "Unique annotated gold PMIDs available in the searchable corpus, as saved with each ranking.",
   "source_artifacts": {
     "questions": "training14b.json",
     "bm25": "rerank/{split}_top200.jsonl",
+    "dense": "medcpt_bi/{split}_top200.jsonl",
+    "bm25_lora": "lora/{split}_top200.jsonl",
+    "dense_lora": "lora_bi/{split}_top200.jsonl",
     "hybrid": "union_lora/{split}_union.jsonl"
   },
   "splits": {
@@ -18,12 +24,19 @@
         "over_20_questions": 146,
         "over_20_fraction": 0.4294117647058823,
         "full_recall_possible_questions": 194,
-        "full_recall_possible_fraction": 0.5705882352941176
+        "full_recall_possible_fraction": 0.5705882352941176,
+        "over_100_questions": 0,
+        "over_100_fraction": 0.0,
+        "full_recall_possible_at_100_questions": 340,
+        "full_recall_possible_at_100_fraction": 1.0
       },
       "ceilings": {
         "top_20_capacity": 0.8399270546388722,
         "hybrid_candidate_restricted": 0.8342668178168706,
-        "candidate_exclusion_gap": 0.005660236822001563
+        "candidate_exclusion_gap": 0.005660236822001563,
+        "top_100_capacity": 1.0,
+        "hybrid_candidate_restricted_at_100": 0.9921815134434533,
+        "candidate_exclusion_gap_at_100": 0.007818486556546711
       },
       "systems": {
         "bm25": {
@@ -32,7 +45,13 @@
           "fraction_of_top_20_capacity_achieved": 0.8248418372281733,
           "full_coverage_at_20_questions": 109,
           "full_coverage_at_20": 0.3205882352941177,
-          "full_coverage_at_20_among_possible_questions": 0.5618556701030928
+          "full_coverage_at_20_among_possible_questions": 0.5618556701030928,
+          "recall_at_100": 0.9241840622011711,
+          "absolute_gap_to_top_100_capacity": 0.07581593779882889,
+          "fraction_of_top_100_capacity_achieved": 0.9241840622011711,
+          "full_coverage_at_100_questions": 212,
+          "full_coverage_at_100": 0.6235294117647059,
+          "full_coverage_at_100_among_possible_questions": 0.6235294117647059
         },
         "hybrid": {
           "recall_at_20": 0.7654934976774985,
@@ -42,7 +61,15 @@
           "full_coverage_at_20": 0.4294117647058823,
           "full_coverage_at_20_among_possible_questions": 0.7525773195876289,
           "absolute_gap_to_candidate_restricted_ceiling": 0.0687733201393721,
-          "fraction_of_candidate_restricted_ceiling_achieved": 0.9175643587032027
+          "fraction_of_candidate_restricted_ceiling_achieved": 0.9175643587032027,
+          "recall_at_100": 0.9808068730670072,
+          "absolute_gap_to_top_100_capacity": 0.0191931269329928,
+          "fraction_of_top_100_capacity_achieved": 0.9808068730670072,
+          "full_coverage_at_100_questions": 284,
+          "full_coverage_at_100": 0.8352941176470589,
+          "full_coverage_at_100_among_possible_questions": 0.8352941176470589,
+          "absolute_gap_to_candidate_restricted_ceiling_at_100": 0.011374640376446088,
+          "fraction_of_candidate_restricted_ceiling_achieved_at_100": 0.9885357263541734
         }
       },
       "hybrid_gap_attribution": {
@@ -51,7 +78,51 @@
         "ranking_gap_to_candidate_oracle": 0.0687733201393721,
         "candidate_exclusion_share_of_total_gap": 0.07604415337747289,
         "ranking_share_of_total_gap": 0.9239558466225272
-      }
+      },
+      "hybrid_gap_attribution_at_100": {
+        "total_gap_to_top_100_capacity": 0.0191931269329928,
+        "candidate_exclusion_gap": 0.007818486556546711,
+        "ranking_gap_to_candidate_oracle": 0.011374640376446088,
+        "candidate_exclusion_share_of_total_gap": 0.4073586645804342,
+        "ranking_share_of_total_gap": 0.5926413354195659
+      },
+      "retrieval_systems": [
+        {
+          "name": "BM25",
+          "recall_at_20": 0.6928069748859756,
+          "recall_at_100": 0.9241840622011711
+        },
+        {
+          "name": "MedCPT bi-encoder",
+          "recall_at_20": 0.6663962564032694,
+          "recall_at_100": 0.9334247669829383
+        },
+        {
+          "name": "BM25 + frozen MedCPT reranker",
+          "recall_at_20": 0.7305942596107295,
+          "recall_at_100": 0.945688291679357
+        },
+        {
+          "name": "MedCPT candidates + BM25-trained LoRA reranker",
+          "recall_at_20": 0.7499080318300246,
+          "recall_at_100": 0.9590324972502414
+        },
+        {
+          "name": "MedCPT candidates + matching LoRA reranker",
+          "recall_at_20": 0.7511184118735527,
+          "recall_at_100": 0.9590522080449282
+        },
+        {
+          "name": "BM25 + LoRA MedCPT reranker",
+          "recall_at_20": 0.7523244219641239,
+          "recall_at_100": 0.9484799835728702
+        },
+        {
+          "name": "BM25/MedCPT union + LoRA reranker",
+          "recall_at_20": 0.7654934976774985,
+          "recall_at_100": 0.9808068730670072
+        }
+      ]
     },
     "test": {
       "questions": 340,
@@ -62,12 +133,19 @@
         "over_20_questions": 161,
         "over_20_fraction": 0.47352941176470587,
         "full_recall_possible_questions": 179,
-        "full_recall_possible_fraction": 0.5264705882352941
+        "full_recall_possible_fraction": 0.5264705882352941,
+        "over_100_questions": 3,
+        "over_100_fraction": 0.008823529411764706,
+        "full_recall_possible_at_100_questions": 337,
+        "full_recall_possible_at_100_fraction": 0.9911764705882353
       },
       "ceilings": {
         "top_20_capacity": 0.7720326563601417,
         "hybrid_candidate_restricted": 0.7690438602449352,
-        "candidate_exclusion_gap": 0.0029887961152065268
+        "candidate_exclusion_gap": 0.0029887961152065268,
+        "top_100_capacity": 0.9991855203619909,
+        "hybrid_candidate_restricted_at_100": 0.990772516872517,
+        "candidate_exclusion_gap_at_100": 0.008413003489473936
       },
       "systems": {
         "bm25": {
@@ -76,7 +154,13 @@
           "fraction_of_top_20_capacity_achieved": 0.8334541566779337,
           "full_coverage_at_20_questions": 101,
           "full_coverage_at_20": 0.29705882352941176,
-          "full_coverage_at_20_among_possible_questions": 0.5642458100558659
+          "full_coverage_at_20_among_possible_questions": 0.5642458100558659,
+          "recall_at_100": 0.9048314531721029,
+          "absolute_gap_to_top_100_capacity": 0.09435406718988804,
+          "fraction_of_top_100_capacity_achieved": 0.9055690207002751,
+          "full_coverage_at_100_questions": 171,
+          "full_coverage_at_100": 0.5029411764705882,
+          "full_coverage_at_100_among_possible_questions": 0.5074183976261127
         },
         "hybrid": {
           "recall_at_20": 0.7190013065914587,
@@ -86,7 +170,15 @@
           "full_coverage_at_20": 0.4,
           "full_coverage_at_20_among_possible_questions": 0.7597765363128491,
           "absolute_gap_to_candidate_restricted_ceiling": 0.05004255365347654,
-          "fraction_of_candidate_restricted_ceiling_achieved": 0.9349288691576858
+          "fraction_of_candidate_restricted_ceiling_achieved": 0.9349288691576858,
+          "recall_at_100": 0.9793512577093908,
+          "absolute_gap_to_top_100_capacity": 0.019834262652600132,
+          "fraction_of_top_100_capacity_achieved": 0.9801495695760138,
+          "full_coverage_at_100_questions": 272,
+          "full_coverage_at_100": 0.8,
+          "full_coverage_at_100_among_possible_questions": 0.8071216617210683,
+          "absolute_gap_to_candidate_restricted_ceiling_at_100": 0.011421259163126196,
+          "fraction_of_candidate_restricted_ceiling_achieved_at_100": 0.9884723698239242
         }
       },
       "hybrid_gap_attribution": {
@@ -95,7 +187,51 @@
         "ranking_gap_to_candidate_oracle": 0.05004255365347654,
         "candidate_exclusion_share_of_total_gap": 0.05635904287262775,
         "ranking_share_of_total_gap": 0.9436409571273723
-      }
+      },
+      "hybrid_gap_attribution_at_100": {
+        "total_gap_to_top_100_capacity": 0.019834262652600132,
+        "candidate_exclusion_gap": 0.008413003489473936,
+        "ranking_gap_to_candidate_oracle": 0.011421259163126196,
+        "candidate_exclusion_share_of_total_gap": 0.42416517502207474,
+        "ranking_share_of_total_gap": 0.5758348249779253
+      },
+      "retrieval_systems": [
+        {
+          "name": "BM25",
+          "recall_at_20": 0.6434538265344669,
+          "recall_at_100": 0.9048314531721029
+        },
+        {
+          "name": "MedCPT bi-encoder",
+          "recall_at_20": 0.6131763503658765,
+          "recall_at_100": 0.9069377663588748
+        },
+        {
+          "name": "BM25 + frozen MedCPT reranker",
+          "recall_at_20": 0.6877363504684532,
+          "recall_at_100": 0.9333978054824686
+        },
+        {
+          "name": "MedCPT candidates + BM25-trained LoRA reranker",
+          "recall_at_20": 0.698812549005112,
+          "recall_at_100": 0.9484771237380095
+        },
+        {
+          "name": "MedCPT candidates + matching LoRA reranker",
+          "recall_at_20": 0.6998405698357077,
+          "recall_at_100": 0.9493493926626478
+        },
+        {
+          "name": "BM25 + LoRA MedCPT reranker",
+          "recall_at_20": 0.7105498907524522,
+          "recall_at_100": 0.9367577213413375
+        },
+        {
+          "name": "BM25/MedCPT union + LoRA reranker",
+          "recall_at_20": 0.7190013065914587,
+          "recall_at_100": 0.9793512577093908
+        }
+      ]
     }
   }
 }

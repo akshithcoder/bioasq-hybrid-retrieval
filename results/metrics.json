@@ -1,11 +1,13 @@
 {
   "provenance": {
-    "description": "Aggregate values transcribed from the saved experiment summaries in the original research workspace.",
+    "description": "Recall@20 aggregates were transcribed from saved experiment summaries; Recall@100 was recomputed from the original corpus and saved per-question rankings.",
     "recorded_for_repository": "2026-10-22",
     "historical_results_modified": false,
     "bioasq_dataset_revision": "451e95d26c5baadcb825dde145afb1f88c2d21b8",
     "original_training14b_sha256": "e90d13c88b9a3eaafb6f7f414fcc1ed370a241b7728f8ad5c74b18c553369ef0",
     "pinned_download_matches_original_by_question_id": true,
+    "recall_at_100_recomputed_from_saved_rankings": true,
+    "tfidf_recall_at_100_recomputed_from_original_corpus": true,
     "source_files": [
       "tfidf_recall20.json",
       "tfidf_length_recall20.json",
@@ -16,7 +18,12 @@
       "medcpt_bi_recall.json",
       "lora_recall20.json",
       "lora_bi_recall20.json",
-      "union_lora_recall20.json"
+      "union_lora_recall20.json",
+      "rerank/{validation,test}_top200.jsonl",
+      "medcpt_bi/{validation,test}_top200.jsonl",
+      "lora/{validation,test}_top200.jsonl",
+      "lora_bi/{validation,test}_top200.jsonl",
+      "union_lora/{validation,test}_union.jsonl"
     ]
   },
   "corpus": {
@@ -32,46 +39,70 @@
     "test": {"editions": "13", "questions": 340}
   },
   "metric": {
-    "name": "mean Recall@20",
-    "definition": "For each question, divide annotated relevant PMIDs in the first 20 results by annotated relevant PMIDs available in the corpus, then average across questions."
+    "name": "macro Recall@K",
+    "cutoffs": [20, 100],
+    "definition": "For each question, divide annotated relevant PMIDs in the first K results by annotated relevant PMIDs available in the corpus, then average across questions."
   },
   "systems": [
     {
       "name": "TF-IDF cosine",
       "validation_recall_at_20": 0.5549069567789495,
-      "test_recall_at_20": 0.5550812889014819
+      "test_recall_at_20": 0.5550812889014819,
+      "validation_recall_at_100": 0.8395160483475406,
+      "test_recall_at_100": 0.8287511202791671
     },
     {
       "name": "BM25",
       "validation_recall_at_20": 0.692806974885976,
-      "test_recall_at_20": 0.6434538265344673
+      "test_recall_at_20": 0.6434538265344673,
+      "validation_recall_at_100": 0.9241840622011711,
+      "test_recall_at_100": 0.9048314531721029
     },
     {
       "name": "MedCPT bi-encoder",
       "validation_recall_at_20": 0.6663962564032694,
-      "test_recall_at_20": 0.6131763503658765
+      "test_recall_at_20": 0.6131763503658765,
+      "validation_recall_at_100": 0.9334247669829383,
+      "test_recall_at_100": 0.9069377663588748
     },
     {
       "name": "BM25 + frozen MedCPT reranker",
       "validation_recall_at_20": 0.7305942596107295,
-      "test_recall_at_20": 0.687736350468453
+      "test_recall_at_20": 0.687736350468453,
+      "validation_recall_at_100": 0.945688291679357,
+      "test_recall_at_100": 0.9333978054824686
+    },
+    {
+      "name": "MedCPT candidates + BM25-trained LoRA reranker",
+      "validation_recall_at_20": 0.7499080318300246,
+      "test_recall_at_20": 0.698812549005112,
+      "validation_recall_at_100": 0.9590324972502414,
+      "test_recall_at_100": 0.9484771237380095
     },
     {
       "name": "MedCPT candidates + matching LoRA reranker",
       "validation_recall_at_20": 0.7511184118735527,
-      "test_recall_at_20": 0.6998405698357077
+      "test_recall_at_20": 0.6998405698357077,
+      "validation_recall_at_100": 0.9590522080449282,
+      "test_recall_at_100": 0.9493493926626478
     },
     {
       "name": "BM25 + LoRA MedCPT reranker",
       "validation_recall_at_20": 0.7523244219641239,
-      "test_recall_at_20": 0.7105498907524522
+      "test_recall_at_20": 0.7105498907524522,
+      "validation_recall_at_100": 0.9484799835728702,
+      "test_recall_at_100": 0.9367577213413375
     },
     {
       "name": "BM25/MedCPT union + LoRA reranker",
       "validation_recall_at_20": 0.7654934976774986,
       "test_recall_at_20": 0.7190013065914587,
+      "validation_recall_at_100": 0.9808068730670072,
+      "test_recall_at_100": 0.9793512577093908,
       "validation_full_coverage_at_20": 0.4294117647058823,
       "test_full_coverage_at_20": 0.4,
+      "validation_full_coverage_at_100": 0.8352941176470589,
+      "test_full_coverage_at_100": 0.8,
       "validation_mean_candidate_count": 332.1470588235294,
       "test_mean_candidate_count": 333.8911764705882
     }
@@ -82,7 +113,17 @@
     "selected_on": "edition-12 validation",
     "test_recall_at_10": 0.499434459913674,
     "test_precision_at_10": 0.6532352941176466,
+    "test_recall_at_100": 0.9048314531721029,
     "test_full_coverage_at_20": 0.29705882352941176
+  },
+  "recall_at_100_verification": {
+    "historical_baseline_reference": 0.907,
+    "historical_baseline_matching_system": "MedCPT bi-encoder",
+    "verified_baseline_test_recall_at_100": 0.9069377663588748,
+    "historical_hybrid_reference": 0.979,
+    "verified_hybrid_test_recall_at_100": 0.9793512577093908,
+    "historical_achievable_ceiling_reference": 0.99,
+    "verified_hybrid_candidate_oracle_test_recall_at_100": 0.990772516872517
   },
   "lora": {
     "base_model": "ncbi/MedCPT-Cross-Encoder",

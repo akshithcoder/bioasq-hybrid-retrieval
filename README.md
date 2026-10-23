@@ -8,55 +8,64 @@ lexical ranking placed too low.
 The best system combines the top 200 BM25 results with the top 200 MedCPT bi-encoder
 results, removes duplicates, and reranks the combined list with a LoRA-adapted MedCPT
 cross-encoder. It reached **71.90% mean Recall@20** on the edition-13 test split,
-compared with **64.35%** for BM25.
+compared with **64.35%** for BM25. At rank 100, the corresponding results were
+**97.94%** and **90.48%**.
 
-![Validation and test Recall@20](docs/retrieval-results.png)
+![Validation and test Recall@20 and Recall@100](docs/retrieval-results.png)
 
 ## Results
 
-| Retrieval system | Validation Recall@20 | Test Recall@20 |
-|---|---:|---:|
-| TF-IDF cosine | 55.49% | 55.51% |
-| BM25 | 69.28% | 64.35% |
-| MedCPT bi-encoder | 66.64% | 61.32% |
-| BM25 + frozen MedCPT reranker | 73.06% | 68.77% |
-| MedCPT candidates + matching LoRA reranker | 75.11% | 69.98% |
-| BM25 + LoRA MedCPT reranker | 75.23% | 71.05% |
-| **BM25/MedCPT union + LoRA reranker** | **76.55%** | **71.90%** |
+| Retrieval system | Val R@20 | Test R@20 | Val R@100 | Test R@100 |
+|---|---:|---:|---:|---:|
+| TF-IDF cosine | 55.49% | 55.51% | 83.95% | 82.88% |
+| BM25 | 69.28% | 64.35% | 92.42% | 90.48% |
+| MedCPT bi-encoder | 66.64% | 61.32% | 93.34% | 90.69% |
+| BM25 + frozen MedCPT reranker | 73.06% | 68.77% | 94.57% | 93.34% |
+| MedCPT candidates + BM25-trained LoRA reranker | 74.99% | 69.88% | 95.90% | 94.85% |
+| MedCPT candidates + matching LoRA reranker | 75.11% | 69.98% | 95.91% | 94.93% |
+| BM25 + LoRA MedCPT reranker | 75.23% | 71.05% | 94.85% | 93.68% |
+| **BM25/MedCPT union + LoRA reranker** | **76.55%** | **71.90%** | **98.08%** | **97.94%** |
 
-The hybrid system improves on BM25 by 7.55 percentage points, or 11.74% relative,
-on the test split. It retrieves every annotated article within the top 20 for 40.00%
-of test questions; BM25 does so for 29.71%.
+On the test split, the hybrid improves on BM25 by 7.55 percentage points at rank 20
+and 7.45 points at rank 100. The relative improvements are 11.74% and 8.24%.
 
-All displayed values come from the saved experiment summaries. Exact values and
-provenance are in [`results/metrics.json`](results/metrics.json). The checks performed
-while preparing the repository are recorded in [`VERIFICATION.md`](VERIFICATION.md).
+The historical Recall@100 value of approximately 0.907 corresponds to the standalone
+MedCPT bi-encoder: its verified test result is 0.90694. BM25 reaches 0.90483. The
+historical hybrid result of approximately 0.979 is reproduced as 0.97935.
 
-### What Recall@20 means
+Recall@20 values were checked against the saved experiment summaries. Neural
+Recall@100 values were recomputed from the saved per-question rankings and logits;
+TF-IDF was rescored from the original corpus. Exact values and provenance are in
+[`results/metrics.json`](results/metrics.json), with verification details in
+[`VERIFICATION.md`](VERIFICATION.md).
 
-For one question, Recall@20 is the fraction of its annotated relevant PubMed articles
-found among the first 20 results. The reported value is the mean across questions.
-The 71.90% result is therefore a retrieval recall—not answer accuracy, classification
-accuracy, or precision.
+### What Recall@K means
 
-### Recall@20 capacity and candidate oracle
+For one question, Recall@K is the fraction of its annotated relevant PubMed articles
+found among the first K results. The reported values are means across all 340 questions
+in each split. They are retrieval recall—not answer accuracy, classification accuracy,
+or precision.
 
-Some questions have more than 20 annotated articles, so no top-20 ranking can retrieve
-all of them. For a question with `g` annotated articles, the maximum possible
-Recall@20 is `min(20, g) / g`. Averaging this value over questions gives the top-20
-capacity below. The candidate oracle applies the same calculation after restricting
-the gold articles to those present in the hybrid BM25/MedCPT candidate union; it asks
-what a perfect reranker could achieve with the candidates the system actually found.
+### Capacity and candidate oracles
 
-| Split | Questions with >20 gold | Full recall possible | Top-20 capacity | Hybrid candidate oracle | BM25 | Hybrid |
-|---|---:|---:|---:|---:|---:|---:|
-| Validation | 146 (42.94%) | 194 (57.06%) | 83.99% | 83.43% | 69.28% | 76.55% |
-| Test | 161 (47.35%) | 179 (52.65%) | 77.20% | 76.90% | 64.35% | 71.90% |
+When a question has more than K annotated articles, a top-K ranking cannot retrieve all
+of them. Its capacity is `min(K, g) / g`, where `g` is the number of annotated articles
+available in the searchable corpus. The candidate oracle replaces `g` in the numerator
+with `min(K, c)`, where `c` is the number of gold articles present in the hybrid
+candidate union. It therefore measures what a perfect reranker could achieve from the
+candidates actually retrieved.
+
+| Split | K | Questions with >K gold | Full recall possible | Capacity | Candidate oracle | BM25 | Hybrid | Hybrid / capacity |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Validation | 20 | 146 (42.94%) | 194 (57.06%) | 83.99% | 83.43% | 69.28% | 76.55% | 91.14% |
+| Validation | 100 | 0 (0.00%) | 340 (100.00%) | 100.00% | 99.22% | 92.42% | 98.08% | 98.08% |
+| Test | 20 | 161 (47.35%) | 179 (52.65%) | 77.20% | 76.90% | 64.35% | 71.90% | 93.13% |
+| Test | 100 | 3 (0.88%) | 337 (99.12%) | 99.92% | 99.08% | 90.48% | 97.94% | 98.01% |
 
 The validation gold counts have median 16, mean 19.73, and maximum 86; the test
 counts have median 18, mean 25.96, and maximum 125.
 
-![Recall@20 ceilings](docs/recall-ceilings.png)
+![Recall@20 and Recall@100 ceilings](docs/recall-ceilings.png)
 
 On the test split, the hybrid system's 71.90% raw Recall@20 is 93.13% of the
 77.20% top-20 capacity. It is 93.49% of its 76.90% candidate-restricted oracle.
@@ -68,20 +77,27 @@ validation gaps are 0.57 and 6.88 points. Candidate exclusion therefore accounts
 5.64% of the test gap and 7.60% of the validation gap; the rest is attributable to
 ranking within the available candidates.
 
-Across validation and test respectively, BM25 achieved 82.48% and 83.35% of the
-top-20 capacity; the hybrid achieved 91.14% and 93.13%. Against its own
-candidate-restricted oracle, the hybrid achieved 91.76% and 93.49%.
+At rank 100, the hybrid reaches 98.08% of validation capacity and 98.01% of test
+capacity. It reaches 98.85% of the candidate oracle on both splits. On test, the
+1.98-point gap to capacity consists of 0.84 points from candidate exclusion and 1.14
+points from ranking. Candidate exclusion therefore accounts for 42.42% of this gap.
+On validation, the corresponding 1.92-point gap consists of 0.78 candidate-exclusion
+points and 1.14 ranking points, or 40.74% and 59.26% of the gap.
+The historical achievable-ceiling estimate of approximately 0.990 corresponds to the
+verified test candidate oracle of 0.99077; the separate theoretical capacity is
+0.99919.
 
 Full coverage means that all annotated articles for a question were retrieved in the
-top 20. It is impossible for the 146 validation and 161 test questions with more than
-20 annotated articles.
+top K. At rank 20 it is impossible for 146 validation and 161 test questions; at rank
+100 it is impossible for three test questions and possible for every validation
+question.
 
-| Split | System | Full coverage across all questions | Full coverage where possible |
+| Split | System | Full@20, all / possible | Full@100, all / possible |
 |---|---|---:|---:|
-| Validation | BM25 | 32.06% | 56.19% |
-| Validation | Hybrid | 42.94% | 75.26% |
-| Test | BM25 | 29.71% | 56.42% |
-| Test | Hybrid | 40.00% | 75.98% |
+| Validation | BM25 | 32.06% / 56.19% | 62.35% / 62.35% |
+| Validation | Hybrid | 42.94% / 75.26% | 83.53% / 83.53% |
+| Test | BM25 | 29.71% / 56.42% | 50.29% / 50.74% |
+| Test | Hybrid | 40.00% / 75.98% | 80.00% / 80.71% |
 
 The calculations use the actual per-question gold counts and saved candidate rankings,
 not the median counts in the split summary. The aggregate output and definitions are
@@ -101,7 +117,7 @@ BioASQ question
                                  LoRA MedCPT cross-encoder
                                                │
                                                ▼
-                                     ranked top 20 articles
+                              ranked articles evaluated at 20 and 100
 ```
 
 ### Data and temporal split
@@ -219,8 +235,8 @@ all expected question IDs are present; duplicate IDs, missing questions, malform
 candidate lists, and mismatched candidate/logit lengths stop the run with an error.
 An interrupted run resumes only the missing or unscored questions.
 
-Recompute the Recall@20 ceilings from the saved per-question rankings, then generate
-both result figures with:
+Recompute Recall@20, Recall@100, and their ceilings from the saved per-question
+rankings, then generate both result figures with:
 
 ```bash
 python scripts/analyze_recall_ceiling.py
@@ -309,7 +325,8 @@ The question, titles, ranks, and provenance are saved in
 
 The lightweight test suite checks parsing, split assignment, retrieval metrics, cache
 validation and resume behavior, ceiling calculations, committed result consistency,
-and the adapter checksum without downloading the dataset or neural models.
+Recall@20/100 consistency, and the adapter checksum without downloading the dataset or
+neural models.
 
 ```bash
 ruff check .
