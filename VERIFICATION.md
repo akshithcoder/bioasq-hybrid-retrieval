@@ -32,8 +32,8 @@ Verified on 2026-10-22 on macOS with Python 3.12.14.
 - Regenerated both-cutoff versions of `docs/retrieval-results.png` and
   `docs/recall-ceilings.png` from the saved JSON results.
 - Checked every external README link successfully.
-- The CI run for the published commit `e8bd2aa` completed successfully:
-  [GitHub Actions run 39869597617](https://github.com/akshithcoder/bioasq-hybrid-retrieval/actions/runs/39869597617).
+- The CI run for the published Recall@100 commit `60eec9c` completed successfully:
+  [GitHub Actions run 39894040877](https://github.com/akshithcoder/bioasq-hybrid-retrieval/actions/runs/39894040877).
 
 ## Reproduced metrics
 
@@ -77,7 +77,4 @@ Precision@10 of 0.6532352941.
   inference were verified instead.
 - Full MedCPT encoding and reranking were not repeated. Neural metrics were recomputed
   from the saved per-question candidate lists and logits.
-- The current review changes were not committed or pushed, so no remote GitHub Actions
-  run exists for them. Ruff and pytest were run successfully in the local environment.
-
 No historical experiment artifact in the original research workspace was modified.
